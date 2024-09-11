@@ -17,22 +17,44 @@ defmodule GeminiAI do
       iex> %GeminiAI.Response{candidates: [%GeminiAI.Response.Candidate{content: %GeminiAI.Response.Content{parts: [%GeminiAI.Response.Part{text: explanation}]}}]} = response
       iex> String.starts_with?(explanation, "AI, or Artificial Intelligence,")
       true
+
+      iex> request_body = %{
+      ...>   contents: [
+      ...>     %{
+      ...>       parts: [
+      ...>         %{
+      ...>           fileData: %{
+      ...>             fileUri: "https://example.com/file.pdf",
+      ...>             mimeType: "application/pdf"
+      ...>           }
+      ...>         },
+      ...>         %{
+      ...>           text: "Summarize this PDF."
+      ...>         }
+      ...>       ]
+      ...>     }
+      ...>   ]
+      ...> }
+      iex> {:ok, response} = GeminiAI.generate_content(client, "gemini-1.5-pro", request_body)
+      iex> %GeminiAI.Response{candidates: [%GeminiAI.Response.Candidate{}]} = response
   """
-  @spec generate_content(Req.Request.t() | keyword(), String.t(), String.t()) :: {:ok, Response.t()} | {:error, any()}
-  def generate_content(client \\ new(), model, prompt) do
+
+  @spec generate_content(Req.Request.t() | keyword(), String.t(), String.t()) ::
+          {:ok, Response.t()} | {:error, any()}
+  def generate_content(client \\ new(), model, prompt)
+
+  def generate_content(client, model, prompt) when is_binary(prompt) do
     client
     |> Req.post(
       url: "/models/#{model}:generateContent",
-      json: %{
-        contents: [
-          %{
-            parts: [
-              %{text: prompt}
-            ]
-          }
-        ]
-      }
+      json: %{contents: [%{parts: [%{text: prompt}]}]}
     )
+    |> process_response()
+  end
+
+  def generate_content(client, model, request_body) when is_map(request_body) do
+    client
+    |> Req.post(url: "/models/#{model}:generateContent", json: request_body)
     |> process_response()
   end
 
