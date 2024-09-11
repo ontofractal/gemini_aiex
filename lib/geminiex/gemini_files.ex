@@ -53,13 +53,23 @@ defmodule GeminiAI.Files do
     ]
   ]
 
+  @list_schema [
+    page_size: [
+      type: :integer,
+      doc: "The maximum number of files to return"
+    ],
+    page_token: [
+      type: :string,
+      doc: "A page token received from a previous list call"
+    ]
+  ]
 
   @doc """
-  Uploads a file to the Google AI file service.
+  Uploads a file to the Google AI file service using a resumable upload protocol.
 
   ## Examples
 
-      iex> {:ok, file} = GeminiAI.Files.upload("path/to/image.jpg")
+      iex> {:ok, file} = GeminiAI.Files.upload_file("path/to/file.pdf")
       iex> %GeminiAI.Files.Response{name: name, mimeType: mime_type} = file
       iex> String.starts_with?(name, "files/")
       true
@@ -124,10 +134,12 @@ defmodule GeminiAI.Files do
       true
   """
   @spec list(Req.Request.t() | keyword(), keyword()) :: {:ok, [Response.t()]} | {:error, any()}
-  def list(client \\ new(), opts \\ []) do
-    client
-    |> Req.get(url: "/files", params: Map.new(opts))
-    |> process_response(fn %{"files" => files} -> Enum.map(files, &Response.from_map/1) end)
+  def list(client, opts \\ []) do
+    with {:ok, validated_opts} <- NimbleOptions.validate(opts, @list_schema) do
+      client
+      |> Req.get(url: "/files", params: Map.new(validated_opts))
+      |> process_response(fn %{"files" => files} -> files end)
+    end
   end
 
   @doc """
@@ -141,7 +153,7 @@ defmodule GeminiAI.Files do
       true
   """
   @spec get(Req.Request.t() | keyword(), String.t()) :: {:ok, Response.t()} | {:error, any()}
-  def get(client \\ new(), name) do
+  def get(client, name) do
     name = if String.contains?(name, "/"), do: name, else: "files/#{name}"
 
     client
@@ -158,7 +170,7 @@ defmodule GeminiAI.Files do
       :ok
   """
   @spec delete(Req.Request.t() | keyword(), String.t()) :: :ok | {:error, any()}
-  def delete(client \\ new(), name) do
+  def delete(client, name) do
     name = if String.contains?(name, "/"), do: name, else: "files/#{name}"
 
     client
@@ -166,26 +178,14 @@ defmodule GeminiAI.Files do
     |> process_response(fn _ -> :ok end)
   end
 
-  def new(opts \\ []) do
-    api_key = Keyword.get_lazy(opts, :api_key, &fetch_api_key/0)
-
-    Req.new(
-      base_url: @base_url,
-      params: [key: api_key],
-      retry: :transient,
-      json: true
-    )
-  end
-
-  defp fetch_api_key do
-    Application.fetch_env!(:gemini_ai, :api_key)
-  end
-
-  defp process_response({:ok, %{status: 200, body: body}}, on_success \\ &Response.from_map/1) do
+  @spec process_response({:ok, Req.Response.t()} | {:error, any()}, (map() -> any())) ::
+          {:ok, any()} | {:error, any()}
+  defp process_response({:ok, %{status: 200, body: body}}, on_success \\ & &1) do
     {:ok, on_success.(body)}
   end
 
-  defp process_response({:ok, %{status: status, body: body}}, _) do
+  defp process_response({:ok, %{status: status, body: body}} = response, _) do
+    Logger.error("HTTP #{status}: #{inspect(body)}")
     {:error, "HTTP #{status}: #{inspect(body)}"}
   end
 
