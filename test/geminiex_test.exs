@@ -20,5 +20,14 @@ defmodule GeminiexTest do
     %GeminiAI.Response.Part{text: text} = part
 
     assert String.trim( text) == "hello world"
+
+  describe "upload_file/3" do
+    @tag :this
+    test "uploads a PDF file successfully", %{test_client: test_client} do
+      pdf_path = "test/fixtures/test.pdf"
+
+      assert {:ok, response} = GeminiAI.upload_file(test_client, pdf_path)
+      assert response.display_name == "test.pdf"
+    end
   end
 end
