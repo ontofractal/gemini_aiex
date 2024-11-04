@@ -83,12 +83,6 @@ defmodule GeminiAI.Files do
          {:ok, file_stats} <- File.stat(path),
          mime_type <- validated_opts[:mime_type] || MIME.from_path(path),
          display_name <- validated_opts[:display_name] || Path.basename(path) do
-      metadata = %{
-        file: %{
-          display_name: display_name
-        }
-      }
-
       {:ok, %Req.Response{} = response} =
         Req.post(client,
           url: "/v1beta/files",
@@ -98,7 +92,11 @@ defmodule GeminiAI.Files do
             {"X-Goog-Upload-Header-Content-Length", to_string(file_stats.size)},
             {"X-Goog-Upload-Header-Content-Type", mime_type}
           ],
-          json: metadata
+          json: %{
+            file: %{
+              display_name: display_name
+            }
+          }
         )
 
       [upload_url] = Req.Response.get_header(response, "x-goog-upload-url")

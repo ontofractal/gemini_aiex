@@ -73,6 +73,14 @@ defmodule GeminiAI do
     GeminiAI.Files.upload_file(client, path, opts)
   end
 
+  def get_text(%Response{
+        candidates: [
+          %Response.Candidate{content: %Response.Content{parts: [%Response.Part{text: text}]}}
+        ]
+      }) do
+    text
+  end
+
   defp fetch_api_key do
     Application.fetch_env(:gemini_ai, :api_key)
   end
