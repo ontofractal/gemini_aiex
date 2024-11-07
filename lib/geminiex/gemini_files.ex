@@ -176,6 +176,40 @@ defmodule GeminiAI.Files do
     |> process_response(fn _ -> :ok end)
   end
 
+  @doc """
+  Uploads multiple files in parallel to the Google AI file store.
+
+  ## Examples
+
+      iex> paths = ["path/to/file1.pdf", "path/to/file2.jpg"]
+      iex> {:ok, files} = GeminiAI.Files.upload_files(client, paths)
+      iex> length(files) == 2
+      true
+  """
+  @spec upload_files(Req.Request.t() | keyword(), [String.t()], keyword()) ::
+          {:ok, [ResponseFile.t()]} | {:error, any()}
+  def upload_files(client, paths, opts \\ []) do
+    result =
+      Task.async_stream(
+        paths,
+        fn path -> upload_file(client, path, opts) end,
+        ordered: true
+      )
+      |> Enum.reduce_while(
+        {:ok, []},
+        fn
+          {:ok, {:ok, file}}, {:ok, acc} -> {:cont, {:ok, [file | acc]}}
+          {:ok, {:error, reason}}, _ -> {:halt, {:error, reason}}
+          {:exit, reason}, _ -> {:halt, {:error, reason}}
+        end
+      )
+
+    case result do
+      {:ok, files} -> {:ok, Enum.reverse(files)}
+      {:error, _} = error -> error
+    end
+  end
+
   @spec process_response({:ok, Req.Response.t()} | {:error, any()}, (map() -> any())) ::
           {:ok, any()} | {:error, any()}
   defp process_response({:ok, %{status: 200, body: body}}, on_success \\ & &1) do
