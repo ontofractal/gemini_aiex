@@ -9,7 +9,6 @@ defmodule GeminiAI.FilesTest do
   end
 
   describe "upload_files/3" do
-    @tag :this
     test "uploads multiple files in parallel", %{test_client: test_client} do
       paths = [
         "test/fixtures/test.pdf",

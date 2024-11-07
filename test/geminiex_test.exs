@@ -24,7 +24,6 @@ defmodule GeminiexTest do
       assert String.trim(text) == "hello world"
     end
 
-    @tag :this
     test "generates content based on uploaded file", %{test_client: test_client} do
       pdf_path = "test/fixtures/test.pdf"
 

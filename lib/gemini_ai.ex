@@ -64,17 +64,9 @@ defmodule GeminiAI do
   end
 
   defp generate_content_request(client, model, body) do
-    post_request(client, "/models/#{model}:generateContent", body)
-    |> case do
-      {:ok, %Req.Response{status: 200, body: body}} ->
-        {:ok, Response.from_map(body)}
-
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, "HTTP #{status}: #{inspect(body)}"}
-
-      error ->
-        error
-    end
+    client
+    |> post_request("/models/#{model}:generateContent", body)
+    |> process_response()
   end
 
   def handle_response(response) do
@@ -105,6 +97,10 @@ defmodule GeminiAI do
 
   def upload_file(client, path, opts \\ []) do
     GeminiAI.Files.upload_file(client, path, opts)
+  end
+
+  def upload_files(client, paths, opts \\ []) do
+    GeminiAI.Files.upload_files(client, paths, opts)
   end
 
   def get_text(%Response{
