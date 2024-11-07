@@ -4,6 +4,7 @@ defmodule GeminiAI do
   """
 
   alias GeminiAI.Response
+  alias GeminiAI.Files
 
   @base_url "https://generativelanguage.googleapis.com/v1beta"
 
@@ -39,23 +40,56 @@ defmodule GeminiAI do
       iex> %GeminiAI.Response{candidates: [%GeminiAI.Response.Candidate{}]} = response
   """
 
-  @spec generate_content(Req.Request.t() | keyword(), String.t(), String.t()) ::
-          {:ok, Response.t()} | {:error, any()}
-  def generate_content(client \\ new(), model, prompt)
+  def generate_content(client \\ new(), model, prompt, _opts \\ [])
 
-  def generate_content(client, model, prompt) when is_binary(prompt) do
-    client
-    |> Req.post(
-      url: "/models/#{model}:generateContent",
-      json: %{contents: [%{parts: [%{text: prompt}]}]}
-    )
-    |> process_response()
+  def generate_content(client, model, prompt, _) when is_binary(prompt) do
+    generate_content_request(client, model, %{contents: [%{parts: [%{text: prompt}]}]})
   end
 
-  def generate_content(client, model, request_body) when is_map(request_body) do
+  def generate_content(client, model, prompt, _) when is_map(prompt) do
+    generate_content_request(client, model, prompt)
+  end
+
+  def generate_content(client, model, prompt, opts) do
+    file_names = Keyword.get(opts, :file_names, [])
+
+    parts =
+      [%{text: prompt}] ++
+        Enum.map(file_names, fn file_name ->
+          {:ok, file} = Files.get(client, file_name)
+          %{file_data: %{file_uri: file.uri, mime_type: file.mime_type}}
+        end)
+
+    generate_content_request(client, model, %{contents: [%{parts: parts}]})
+  end
+
+  defp generate_content_request(client, model, body) do
+    post_request(client, "/models/#{model}:generateContent", body)
+    |> case do
+      {:ok, %Req.Response{status: 200, body: body}} ->
+        {:ok, Response.from_map(body)}
+
+      {:ok, %Req.Response{status: status, body: body}} ->
+        {:error, "HTTP #{status}: #{inspect(body)}"}
+
+      error ->
+        error
+    end
+  end
+
+  def handle_response(response) do
+    with {:ok, response} <- response,
+         %GeminiAI.Response{candidates: [candidate]} <- response,
+         %GeminiAI.Response.Candidate{content: %GeminiAI.Response.Content{parts: [part]}} <-
+           candidate,
+         %GeminiAI.Response.Part{text: text} <- part do
+      {:ok, text}
+    end
+  end
+
+  def post_request(client, url, body) do
     client
-    |> Req.post(url: "/models/#{model}:generateContent", json: request_body)
-    |> process_response()
+    |> Req.post(url: url, json: body)
   end
 
   def new(opts \\ []) do
