@@ -13,6 +13,11 @@ defmodule GeminiAI do
       type: {:map, :string, :string},
       doc: "Map of MIME type to base64 encoded data",
       default: %{}
+    ],
+    contents: [
+      type: :list,
+      doc: "List of content objects with parts and optional roles",
+      default: nil
     ]
   ]
 
@@ -22,6 +27,7 @@ defmodule GeminiAI do
 
   ## Options
     * `:inline_data` - Map of MIME type to base64 encoded data. Example: `%{"audio/mp3" => "base64data"}`
+    * `:contents` - List of content objects with parts and optional roles for chat-like interactions
 
   ## Examples
 
@@ -39,6 +45,14 @@ defmodule GeminiAI do
       ...>   inline_data: %{"audio/mp3" => audio_data}
       ...> )
       iex> %GeminiAI.Response{candidates: [%GeminiAI.Response.Candidate{}]} = response
+
+      # With contents format for chat
+      iex> contents = [
+      ...>   %{role: "user", parts: [%{text: "Hello"}]},
+      ...>   %{role: "model", parts: [%{text: "Hi! How can I help you today?"}]},
+      ...>   %{role: "user", parts: [%{text: "What's the weather like?"}]}
+      ...> ]
+      iex> {:ok, response} = GeminiAI.generate_content(client, "gemini-1.5-pro", contents: contents)
   """
 
   def generate_content(client \\ new(), model, prompt, opts \\ [])
@@ -46,23 +60,28 @@ defmodule GeminiAI do
   def generate_content(client, model, prompt, opts) when is_binary(prompt) do
     validated_opts = NimbleOptions.validate!(opts, @generate_content_schema) |> Map.new()
 
-    parts =
-      case validated_opts.inline_data do
-        inline_data when map_size(inline_data) > 0 ->
-          Enum.map(inline_data, fn {mime_type, data} ->
-            %{
-              inline_data: %{
-                mime_type: mime_type,
-                data: data
+    request_body =
+      case validated_opts do
+        %{contents: contents} when is_list(contents) and contents != nil ->
+          %{contents: contents}
+
+        %{inline_data: inline_data} when map_size(inline_data) > 0 ->
+          parts =
+            Enum.map(inline_data, fn {mime_type, data} ->
+              %{
+                inline_data: %{
+                  mime_type: mime_type,
+                  data: data
+                }
               }
-            }
-          end) ++ [%{text: prompt}]
+            end) ++ [%{text: prompt}]
+
+          %{contents: [%{parts: parts}]}
 
         _ ->
-          [%{text: prompt}]
+          %{contents: [%{parts: [%{text: prompt}]}]}
       end
 
-    request_body = %{contents: [%{parts: parts}]}
     generate_content_request(client, model, request_body)
   end
 
