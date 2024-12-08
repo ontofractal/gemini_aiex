@@ -8,8 +8,8 @@ defmodule GeminiexTest do
     %{test_client: test_client}
   end
 
-  describe "generate_content/2" do
-    test "generate_content/2", %{test_client: test_client} do
+  describe "generate_content/4" do
+    test "generates text content", %{test_client: test_client} do
       {:ok, response} =
         GeminiAI.generate_content(
           test_client,
@@ -24,40 +24,61 @@ defmodule GeminiexTest do
       assert String.trim(text) == "hello world"
     end
 
-    test "generates content based on uploaded file", %{test_client: test_client} do
-      pdf_path = "test/fixtures/test.pdf"
-
-      {:ok, uploaded_file} = GeminiAI.upload_file(test_client, pdf_path)
-
-      request_body =
-        %{
-          contents: [
-            %{
-              parts: [
-                %{
-                  text: "Return all the text in the PDF file."
-                },
-                %{
-                  file_data: %{
-                    mime_type: uploaded_file.mime_type,
-                    file_uri: uploaded_file.uri
-                  }
-                }
-              ]
-            }
-          ]
-        }
+    test "generates content with inline audio data", %{test_client: test_client} do
+      audio_data = File.read!("test/fixtures/sample-3.ogg") |> Base.encode64()
 
       {:ok, response} =
-        GeminiAI.generate_content(test_client, "gemini-1.5-flash-latest", request_body)
+        GeminiAI.generate_content(
+          test_client,
+          "gemini-1.5-flash",
+          "Is there any speech in this audio? Answer with 'yes' or 'no'.",
+          inline_data: %{"audio/ogg" => audio_data}
+        )
 
       assert %GeminiAI.Response{candidates: [candidate]} = response
 
       assert %GeminiAI.Response.Candidate{content: %GeminiAI.Response.Content{parts: [part]}} =
                candidate
 
-      assert %GeminiAI.Response.Part{text: summary} = part
-      assert String.contains?(summary, "This is a test PDF document.")
+      assert %GeminiAI.Response.Part{text: text} = part
+      assert String.trim(String.downcase(text)) in ["yes", "no"]
+    end
+
+    test "generates content with multiple inline data", %{test_client: test_client} do
+      audio_data = File.read!("test/fixtures/sample-3.ogg") |> Base.encode64()
+
+      image_data =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+      {:ok, response} =
+        GeminiAI.generate_content(
+          test_client,
+          "gemini-1.5-flash",
+          "Please describe these contents.",
+          inline_data: %{
+            "audio/ogg" => audio_data,
+            "image/png" => image_data
+          }
+        )
+
+      assert %GeminiAI.Response{candidates: [candidate]} = response
+
+      assert %GeminiAI.Response.Candidate{content: %GeminiAI.Response.Content{parts: [part]}} =
+               candidate
+
+      assert %GeminiAI.Response.Part{text: text} = part
+      assert is_binary(text)
+    end
+
+    test "raises error with invalid inline data", %{test_client: test_client} do
+      assert_raise NimbleOptions.ValidationError, fn ->
+        GeminiAI.generate_content(
+          test_client,
+          "gemini-1.5-flash",
+          "Please describe this content.",
+          inline_data: %{"audio/ogg" => 123}
+        )
+      end
     end
   end
 
