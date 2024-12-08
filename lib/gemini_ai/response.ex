@@ -8,7 +8,8 @@ defmodule GeminiAI.Response do
     use TypedStruct
 
     typedstruct do
-      field(:text, String.t(), enforce: true)
+      field(:text, String.t())
+      field(:inline_data, map())
     end
   end
 
@@ -60,7 +61,7 @@ defmodule GeminiAI.Response do
 
   typedstruct do
     field(:candidates, [Candidate.t()], enforce: true)
-    field(:usage_metadata, UsageMetadata.t(), enforce: true)
+    field(:usage_metadata, UsageMetadata.t())
   end
 
   @doc """
@@ -116,30 +117,42 @@ defmodule GeminiAI.Response do
   @spec from_map(map()) :: t()
   def from_map(response) do
     %__MODULE__{
-      candidates: Enum.map(response["candidates"], &map_candidate/1),
+      candidates: map_candidates(response["candidates"]),
       usage_metadata: map_usage_metadata(response["usageMetadata"])
     }
   end
 
+  defp map_candidates(nil), do: []
+  defp map_candidates(candidates), do: Enum.map(candidates, &map_candidate/1)
+
   defp map_candidate(candidate) do
     %Candidate{
       content: map_content(candidate["content"]),
-      finish_reason: candidate["finishReason"],
-      index: candidate["index"],
-      safety_ratings: Enum.map(candidate["safetyRatings"], &map_safety_rating/1)
+      finish_reason: candidate["finishReason"] || "UNSPECIFIED",
+      index: candidate["index"] || 0,
+      safety_ratings: map_safety_ratings(candidate["safetyRatings"])
     }
   end
 
   defp map_content(content) do
     %Content{
-      parts: Enum.map(content["parts"], &map_part/1),
-      role: content["role"]
+      parts: map_parts(content["parts"]),
+      role: content["role"] || "model"
     }
   end
 
+  defp map_parts(nil), do: []
+  defp map_parts(parts), do: Enum.map(parts, &map_part/1)
+
   defp map_part(part) do
-    %Part{text: part["text"]}
+    %Part{
+      text: part["text"],
+      inline_data: part["inlineData"]
+    }
   end
+
+  defp map_safety_ratings(nil), do: []
+  defp map_safety_ratings(ratings), do: Enum.map(ratings, &map_safety_rating/1)
 
   defp map_safety_rating(rating) do
     %SafetyRating{
@@ -148,11 +161,13 @@ defmodule GeminiAI.Response do
     }
   end
 
+  defp map_usage_metadata(nil), do: nil
+
   defp map_usage_metadata(metadata) do
     %UsageMetadata{
-      candidates_token_count: metadata["candidatesTokenCount"],
-      prompt_token_count: metadata["promptTokenCount"],
-      total_token_count: metadata["totalTokenCount"]
+      candidates_token_count: metadata["candidatesTokenCount"] || 0,
+      prompt_token_count: metadata["promptTokenCount"] || 0,
+      total_token_count: metadata["totalTokenCount"] || 0
     }
   end
 end

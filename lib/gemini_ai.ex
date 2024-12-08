@@ -8,9 +8,20 @@ defmodule GeminiAI do
 
   @base_url "https://generativelanguage.googleapis.com/v1beta"
 
+  @generate_content_schema [
+    inline_data: [
+      type: {:map, :string, :string},
+      doc: "Map of MIME type to base64 encoded data",
+      default: %{}
+    ]
+  ]
+
   @doc """
   Runs inference with a specified Google AI model.
   Generates content based on the given model and prompt, returning a structured Response.
+
+  ## Options
+    * `:inline_data` - Map of MIME type to base64 encoded data. Example: `%{"audio/mp3" => "base64data"}`
 
   ## Examples
 
@@ -19,48 +30,44 @@ defmodule GeminiAI do
       iex> String.starts_with?(explanation, "AI, or Artificial Intelligence,")
       true
 
-      iex> request_body = %{
-      ...>   contents: [
-      ...>     %{
-      ...>       parts: [
-      ...>         %{
-      ...>           fileData: %{
-      ...>             fileUri: "https://example.com/file.pdf",
-      ...>             mimeType: "application/pdf"
-      ...>           }
-      ...>         },
-      ...>         %{
-      ...>           text: "Summarize this PDF."
-      ...>         }
-      ...>       ]
-      ...>     }
-      ...>   ]
-      ...> }
-      iex> {:ok, response} = GeminiAI.generate_content(client, "gemini-1.5-pro", request_body)
+      # With inline data
+      iex> audio_data = File.read!("audio.mp3") |> Base.encode64()
+      iex> {:ok, response} = GeminiAI.generate_content(
+      ...>   client,
+      ...>   "gemini-1.5-pro",
+      ...>   "Describe this audio",
+      ...>   inline_data: %{"audio/mp3" => audio_data}
+      ...> )
       iex> %GeminiAI.Response{candidates: [%GeminiAI.Response.Candidate{}]} = response
   """
 
-  def generate_content(client \\ new(), model, prompt, _opts \\ [])
+  def generate_content(client \\ new(), model, prompt, opts \\ [])
 
-  def generate_content(client, model, prompt, _) when is_binary(prompt) do
-    generate_content_request(client, model, %{contents: [%{parts: [%{text: prompt}]}]})
-  end
-
-  def generate_content(client, model, prompt, _) when is_map(prompt) do
-    generate_content_request(client, model, prompt)
-  end
-
-  def generate_content(client, model, prompt, opts) do
-    file_names = Keyword.get(opts, :file_names, [])
+  def generate_content(client, model, prompt, opts) when is_binary(prompt) do
+    validated_opts = NimbleOptions.validate!(opts, @generate_content_schema) |> Map.new()
 
     parts =
-      [%{text: prompt}] ++
-        Enum.map(file_names, fn file_name ->
-          {:ok, file} = Files.get(client, file_name)
-          %{file_data: %{file_uri: file.uri, mime_type: file.mime_type}}
-        end)
+      case validated_opts.inline_data do
+        inline_data when map_size(inline_data) > 0 ->
+          Enum.map(inline_data, fn {mime_type, data} ->
+            %{
+              inline_data: %{
+                mime_type: mime_type,
+                data: data
+              }
+            }
+          end) ++ [%{text: prompt}]
 
-    generate_content_request(client, model, %{contents: [%{parts: parts}]})
+        _ ->
+          [%{text: prompt}]
+      end
+
+    request_body = %{contents: [%{parts: parts}]}
+    generate_content_request(client, model, request_body)
+  end
+
+  def generate_content(client, model, request_body, _opts) when is_map(request_body) do
+    generate_content_request(client, model, request_body)
   end
 
   defp generate_content_request(client, model, body) do
