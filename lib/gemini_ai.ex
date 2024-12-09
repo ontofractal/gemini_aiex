@@ -18,6 +18,10 @@ defmodule GeminiAI do
       type: :list,
       doc: "List of content objects with parts and optional roles",
       default: nil
+    response_schema: [
+      type: {:or, [:map, :string]},
+      doc: "JSON schema for structured responses",
+      required: false
     ]
   ]
 
@@ -28,6 +32,7 @@ defmodule GeminiAI do
   ## Options
     * `:inline_data` - Map of MIME type to base64 encoded data. Example: `%{"audio/mp3" => "base64data"}`
     * `:contents` - List of content objects with parts and optional roles for chat-like interactions
+    * `:response_schema` - JSON schema for structured responses
 
   ## Examples
 
@@ -64,6 +69,7 @@ defmodule GeminiAI do
       case validated_opts do
         %{contents: contents} when is_list(contents) and contents != nil ->
           %{contents: contents}
+          |> maybe_add_generation_config(validated_opts)
 
         %{inline_data: inline_data} when map_size(inline_data) > 0 ->
           parts =
@@ -80,12 +86,15 @@ defmodule GeminiAI do
 
         _ ->
           %{contents: [%{parts: [%{text: prompt}]}]}
+          |> maybe_add_generation_config(validated_opts)
       end
 
     generate_content_request(client, model, request_body)
   end
 
-  def generate_content(client, model, request_body, _opts) when is_map(request_body) do
+  def generate_content(client, model, request_body, opts) when is_map(request_body) do
+    validated_opts = validate_opts(opts)
+    request_body = maybe_add_generation_config(request_body, validated_opts)
     generate_content_request(client, model, request_body)
   end
 
@@ -148,4 +157,15 @@ defmodule GeminiAI do
   end
 
   defp process_response({:error, _} = error), do: error
+
+  defp maybe_add_generation_config(request_body, %{response_schema: schema})
+       when not is_nil(schema) do
+    Map.put(request_body, :generationConfig, %{
+      response_mime_type: "application/json",
+      response_schema: schema
+    })
+  end
+
+  defp maybe_add_generation_config(request_body, _), do: request_body
+
 end
