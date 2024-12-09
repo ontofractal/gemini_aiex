@@ -140,6 +140,39 @@ defmodule GeminiexTest do
         )
       end
     end
+
+    test "generates content with response schema", %{test_client: test_client} do
+      response_schema = %{
+        type: "ARRAY",
+        items: %{
+          type: "OBJECT",
+          properties: %{
+            recipe_name: %{type: "STRING"}
+          }
+        }
+      }
+
+      {:ok, response} =
+        GeminiAI.generate_content(
+          test_client,
+          "gemini-1.5-flash-latest",
+          "List 3 popular cookie recipes",
+          response_schema: response_schema
+        )
+
+      assert %GeminiAI.Response{candidates: [candidate]} = response
+
+      assert %GeminiAI.Response.Candidate{content: %GeminiAI.Response.Content{parts: [part]}} =
+               candidate
+
+      assert %GeminiAI.Response.Part{text: text} = part
+
+      # The response should be valid JSON
+      assert {:ok, recipes} = Jason.decode(text)
+      assert is_list(recipes)
+      assert length(recipes) == 3
+      assert Enum.all?(recipes, &Map.has_key?(&1, "recipe_name"))
+    end
   end
 
   describe "upload_file/3" do
