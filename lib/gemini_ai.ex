@@ -3,6 +3,7 @@ defmodule GeminiAI do
   A client for interacting with Google AI models using the Req HTTP client.
   """
 
+  require Logger
   alias GeminiAI.Response
   alias GeminiAI.Files
 
@@ -15,9 +16,10 @@ defmodule GeminiAI do
       default: %{}
     ],
     contents: [
-      type: :list,
+      type: {:list, :map},
       doc: "List of content objects with parts and optional roles",
-      default: nil
+      required: false
+    ],
     response_schema: [
       type: {:or, [:map, :string]},
       doc: "JSON schema for structured responses",
@@ -63,11 +65,12 @@ defmodule GeminiAI do
   def generate_content(client \\ new(), model, prompt, opts \\ [])
 
   def generate_content(client, model, prompt, opts) when is_binary(prompt) do
-    validated_opts = NimbleOptions.validate!(opts, @generate_content_schema) |> Map.new()
+    log(:info, "Generating content with model: #{model}")
+    validated_opts = validate_opts(opts)
 
     request_body =
       case validated_opts do
-        %{contents: contents} when is_list(contents) and contents != nil ->
+        %{contents: contents} when is_list(contents) ->
           %{contents: contents}
           |> maybe_add_generation_config(validated_opts)
 
@@ -83,6 +86,7 @@ defmodule GeminiAI do
             end) ++ [%{text: prompt}]
 
           %{contents: [%{parts: parts}]}
+          |> maybe_add_generation_config(validated_opts)
 
         _ ->
           %{contents: [%{parts: [%{text: prompt}]}]}
@@ -98,9 +102,18 @@ defmodule GeminiAI do
     generate_content_request(client, model, request_body)
   end
 
+  defp validate_opts(opts) do
+    NimbleOptions.validate!(opts, @generate_content_schema) |> Map.new()
+  end
+
   defp generate_content_request(client, model, body) do
+    dbg("Making request to Gemini API with model: #{model} with body: #{inspect(body)}")
+    log(:debug, "Making request to Gemini API with model: #{model} with body: #{inspect(body)}")
+
+    url = "#{@base_url}/models/#{model}:generateContent"
+
     client
-    |> post_request("/models/#{model}:generateContent", body)
+    |> post_request(url, body)
     |> process_response()
   end
 
@@ -125,8 +138,7 @@ defmodule GeminiAI do
     Req.new(
       base_url: @base_url,
       params: [key: api_key],
-      retry: :transient,
-      json: true
+      retry: :transient
     )
   end
 
@@ -150,13 +162,20 @@ defmodule GeminiAI do
     Application.fetch_env(:gemini_ai, :api_key)
   end
 
-  defp process_response({:ok, %{status: 200, body: body}}), do: {:ok, Response.from_map(body)}
+  defp process_response({:ok, %{status: 200, body: body}}) do
+    log(:debug, "Successfully received response from Gemini API")
+    {:ok, Response.from_map(body)}
+  end
 
   defp process_response({:ok, %{status: status, body: body}}) do
+    log(:error, "Error response from Gemini API: HTTP #{status}")
     {:error, "HTTP #{status}: #{inspect(body)}"}
   end
 
-  defp process_response({:error, _} = error), do: error
+  defp process_response({:error, _} = error) do
+    log(:error, "Error making request to Gemini API: #{inspect(error)}")
+    error
+  end
 
   defp maybe_add_generation_config(request_body, %{response_schema: schema})
        when not is_nil(schema) do
@@ -168,4 +187,22 @@ defmodule GeminiAI do
 
   defp maybe_add_generation_config(request_body, _), do: request_body
 
+  defp log(level, message) do
+    configured_level = Application.get_env(:geminiex, :log_level, :info)
+
+    if should_log?(level, configured_level) do
+      Logger.log(level, message)
+    end
+  end
+
+  defp should_log?(level, configured_level) do
+    level_priority = %{
+      debug: 0,
+      info: 1,
+      warn: 2,
+      error: 3
+    }
+
+    Map.get(level_priority, level, 4) >= Map.get(level_priority, configured_level, 1)
+  end
 end
