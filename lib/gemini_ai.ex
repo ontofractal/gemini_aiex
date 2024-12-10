@@ -107,7 +107,6 @@ defmodule GeminiAI do
   end
 
   defp generate_content_request(client, model, body, opts) do
-    dbg("Making request to Gemini API with model: #{model} with body: #{inspect(body)}")
     log(:debug, "Making request to Gemini API with model: #{model} with body: #{inspect(body)}")
 
     url = "#{@base_url}/models/#{model}:generateContent"
