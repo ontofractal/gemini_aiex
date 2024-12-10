@@ -21,7 +21,7 @@ defmodule GeminiAI do
       required: false
     ],
     response_schema: [
-      type: {:or, [:map, :string]},
+      type: {:or, [{:map, :string, :any}, :map]},
       doc: "JSON schema for structured responses",
       required: false
     ]
@@ -93,20 +93,20 @@ defmodule GeminiAI do
           |> maybe_add_generation_config(validated_opts)
       end
 
-    generate_content_request(client, model, request_body)
+    generate_content_request(client, model, request_body, validated_opts)
   end
 
   def generate_content(client, model, request_body, opts) when is_map(request_body) do
     validated_opts = validate_opts(opts)
     request_body = maybe_add_generation_config(request_body, validated_opts)
-    generate_content_request(client, model, request_body)
+    generate_content_request(client, model, request_body, validated_opts)
   end
 
   defp validate_opts(opts) do
     NimbleOptions.validate!(opts, @generate_content_schema) |> Map.new()
   end
 
-  defp generate_content_request(client, model, body) do
+  defp generate_content_request(client, model, body, opts) do
     dbg("Making request to Gemini API with model: #{model} with body: #{inspect(body)}")
     log(:debug, "Making request to Gemini API with model: #{model} with body: #{inspect(body)}")
 
@@ -114,7 +114,7 @@ defmodule GeminiAI do
 
     client
     |> post_request(url, body)
-    |> process_response()
+    |> process_response(opts)
   end
 
   def handle_response(response) do
@@ -162,17 +162,34 @@ defmodule GeminiAI do
     Application.fetch_env(:gemini_ai, :api_key)
   end
 
-  defp process_response({:ok, %{status: 200, body: body}}) do
+  defp process_response({:ok, %{status: 200, body: body}}, opts) do
     log(:debug, "Successfully received response from Gemini API")
-    {:ok, Response.from_map(body)}
+
+    response = Response.from_map(body)
+
+    case opts do
+      %{response_schema: schema} when is_map(schema) ->
+        with %Response{candidates: [candidate]} <- response,
+             %Response.Candidate{content: %Response.Content{parts: [%Response.Part{text: text}]}} <-
+               candidate,
+             {:ok, json} <- Jason.decode(text) do
+          candidate = put_in(candidate.content.parts, [%Response.Part{text: json}])
+          {:ok, %{response | candidates: [candidate]}}
+        else
+          _ -> {:ok, response}
+        end
+
+      _ ->
+        {:ok, response}
+    end
   end
 
-  defp process_response({:ok, %{status: status, body: body}}) do
+  defp process_response({:ok, %{status: status, body: body}}, _opts) do
     log(:error, "Error response from Gemini API: HTTP #{status}")
     {:error, "HTTP #{status}: #{inspect(body)}"}
   end
 
-  defp process_response({:error, _} = error) do
+  defp process_response({:error, _} = error, _opts) do
     log(:error, "Error making request to Gemini API: #{inspect(error)}")
     error
   end
